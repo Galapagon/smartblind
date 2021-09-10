@@ -23,14 +23,17 @@
 #define STEPPER_MICROSTEPPING     0                   //Defines microstepping 0 = no microstepping, 1 = 1/2 stepping, 2 = 1/4 stepping 
 #define DRIVER_INVERTED_SLEEP     1                   //Defines sleep while pin high.  If your motor will not rotate freely when on boot, comment this line out.
 
-#define STEPS_TO_CLOSE            12                  //Defines the number of steps needed to open or close fully
+#define STEPS_TO_CLOSE            18                  //Defines the number of steps needed to open or close fully
 
 #define STEPPER_DIR_PIN           D6
 #define STEPPER_STEP_PIN          D7
 #define STEPPER_SLEEP_PIN         D5
+#define STEPPER_DIR_PIN2           D1
+#define STEPPER_STEP_PIN2          D3
+#define STEPPER_SLEEP_PIN2         D2
 #define STEPPER_MICROSTEP_1_PIN   14
 #define STEPPER_MICROSTEP_2_PIN   12
- 
+
 /*****************  END USER CONFIG SECTION *********************************/
 /*****************  END USER CONFIG SECTION *********************************/
 /*****************  END USER CONFIG SECTION *********************************/
@@ -41,13 +44,17 @@ WiFiClient espClient;
 PubSubClient client(espClient);
 SimpleTimer timer;
 AH_EasyDriver shadeStepper(STEPPER_STEPS_PER_REV, STEPPER_DIR_PIN ,STEPPER_STEP_PIN,STEPPER_MICROSTEP_1_PIN,STEPPER_MICROSTEP_2_PIN,STEPPER_SLEEP_PIN);
+AH_EasyDriver shadeStepper2(STEPPER_STEPS_PER_REV, STEPPER_DIR_PIN2 ,STEPPER_STEP_PIN2,STEPPER_MICROSTEP_1_PIN,STEPPER_MICROSTEP_2_PIN,STEPPER_SLEEP_PIN2);
 
 //Global Variables
 bool boot = true;
 int currentPosition = 0;
+int currentPosition2 = 0;
 int newPosition = 0;
+int newPosition2 = 0;
 char positionPublish[50];
 bool moving = false;
+bool moving2 = false;
 char charPayload[50];
 
 const char* ssid = USER_SSID ; 
@@ -93,15 +100,17 @@ void reconnect()
         Serial.println("connected");
         if(boot == false)
         {
-          client.publish(USER_MQTT_CLIENT_NAME"/checkIn","Reconnected"); 
+          client.publish(USER_MQTT_CLIENT_NAME"/MasterBedroom/checkIn","Reconnected"); 
         }
         if(boot == true)
         {
-          client.publish(USER_MQTT_CLIENT_NAME"/checkIn","Rebooted");
+          client.publish(USER_MQTT_CLIENT_NAME"/MasterBedroom/checkIn","Rebooted");
         }
         // ... and resubscribe
-        client.subscribe(USER_MQTT_CLIENT_NAME"/blindsCommand");
-        client.subscribe(USER_MQTT_CLIENT_NAME"/positionCommand");
+        client.subscribe(USER_MQTT_CLIENT_NAME"MasterBedroom/Right/blindsCommand");
+        client.subscribe(USER_MQTT_CLIENT_NAME"MasterBedroom/Right/positionCommand");
+        client.subscribe(USER_MQTT_CLIENT_NAME"MasterBedroom/Left/blindsCommand");
+        client.subscribe(USER_MQTT_CLIENT_NAME"MasterBedroom/Left/positionCommand");
       } 
       else 
       {
@@ -132,27 +141,47 @@ void callback(char* topic, byte* payload, unsigned int length)
   Serial.println(newPayload);
   Serial.println();
   newPayload.toCharArray(charPayload, newPayload.length() + 1);
-  if (newTopic == USER_MQTT_CLIENT_NAME"/blindsCommand") 
+  if (newTopic == USER_MQTT_CLIENT_NAME"MasterBedroom/Right/blindsCommand") 
   {
     if (newPayload == "OPEN")
     {
-      client.publish(USER_MQTT_CLIENT_NAME"/positionCommand", "0", true);
+      client.publish(USER_MQTT_CLIENT_NAME"MasterBedroom/Right/positionCommand", "0", true);
     }
     else if (newPayload == "CLOSE")
     {   
       int stepsToClose = STEPS_TO_CLOSE;
       String temp_str = String(stepsToClose);
       temp_str.toCharArray(charPayload, temp_str.length() + 1);
-      client.publish(USER_MQTT_CLIENT_NAME"/positionCommand", charPayload, true);
+      client.publish(USER_MQTT_CLIENT_NAME"MasterBedroom/Right/positionCommand", charPayload, true);
     }
     else if (newPayload == "STOP")
     {
       String temp_str = String(currentPosition);
       temp_str.toCharArray(positionPublish, temp_str.length() + 1);
-      client.publish(USER_MQTT_CLIENT_NAME"/positionCommand", positionPublish, true); 
+      client.publish(USER_MQTT_CLIENT_NAME"MasterBedroom/Right/positionCommand", positionPublish, true); 
     }
   }
-  if (newTopic == USER_MQTT_CLIENT_NAME"/positionCommand")
+  if (newTopic == USER_MQTT_CLIENT_NAME"MasterBedroom/Left/blindsCommand") 
+  {
+    if (newPayload == "OPEN")
+    {
+      client.publish(USER_MQTT_CLIENT_NAME"MasterBedroom/Left/positionCommand", "0", true);
+    }
+    else if (newPayload == "CLOSE")
+    {   
+      int stepsToClose = STEPS_TO_CLOSE;
+      String temp_str = String(stepsToClose);
+      temp_str.toCharArray(charPayload, temp_str.length() + 1);
+      client.publish(USER_MQTT_CLIENT_NAME"MasterBedroom/Left/positionCommand", charPayload, true);
+    }
+    else if (newPayload == "STOP")
+    {
+      String temp_str = String(currentPosition);
+      temp_str.toCharArray(positionPublish, temp_str.length() + 1);
+      client.publish(USER_MQTT_CLIENT_NAME"MasterBedroom/Left/positionCommand", positionPublish, true); 
+    }
+  }
+  if (newTopic == USER_MQTT_CLIENT_NAME"MasterBedroom/Right/positionCommand")
   {
     if(boot == true)
     {
@@ -165,12 +194,24 @@ void callback(char* topic, byte* payload, unsigned int length)
       newPosition = intPayload;
     }
   }
-  
+    if (newTopic == USER_MQTT_CLIENT_NAME"MasterBedroom/Left/positionCommand")
+  {
+    if(boot == true)
+    {
+      newPosition2 = intPayload;
+      currentPosition2 = intPayload;
+      boot = false;
+    }
+    if(boot == false)
+    {
+      newPosition2 = intPayload;
+    }
+  }
 }
 
 void processStepper()
-{
-  if (newPosition > currentPosition)
+{ 
+  if (newPosition > currentPosition)  //Right
   {
     #if DRIVER_INVERTED_SLEEP == 1
     shadeStepper.sleepON();
@@ -182,7 +223,19 @@ void processStepper()
     currentPosition++;
     moving = true;
   }
-  if (newPosition < currentPosition)
+  if (newPosition2 > currentPosition2)  //Left
+  {
+    #if DRIVER_INVERTED_SLEEP == 1
+    shadeStepper2.sleepON();
+    #endif
+    #if DRIVER_INVERTED_SLEEP == 0
+    shadeStepper2.sleepOFF();
+    #endif
+    shadeStepper2.move(80, FORWARD);
+    currentPosition2++;
+    moving2 = true;
+  }
+  if (newPosition < currentPosition) //Right
   {
     #if DRIVER_INVERTED_SLEEP == 1
     shadeStepper.sleepON();
@@ -194,7 +247,19 @@ void processStepper()
     currentPosition--;
     moving = true;
   }
-  if (newPosition == currentPosition && moving == true)
+  if (newPosition2 < currentPosition2) //Left
+  {
+    #if DRIVER_INVERTED_SLEEP == 1
+    shadeStepper2.sleepON();
+    #endif
+    #if DRIVER_INVERTED_SLEEP == 0
+    shadeStepper2.sleepOFF();
+    #endif
+    shadeStepper2.move(80, BACKWARD);
+    currentPosition2--;
+    moving2 = true;
+  }
+  if (newPosition == currentPosition && moving == true) //Right
   {
     #if DRIVER_INVERTED_SLEEP == 1
     shadeStepper.sleepOFF();
@@ -204,16 +269,31 @@ void processStepper()
     #endif
     String temp_str = String(currentPosition);
     temp_str.toCharArray(positionPublish, temp_str.length() + 1);
-    client.publish(USER_MQTT_CLIENT_NAME"/positionState", positionPublish); 
+    client.publish(USER_MQTT_CLIENT_NAME"MasterBedroom/Right/positionState", positionPublish); 
     moving = false;
+  }
+  if (newPosition2 == currentPosition2 && moving2 == true) //Left
+  {
+    #if DRIVER_INVERTED_SLEEP == 1
+    shadeStepper2.sleepOFF();
+    #endif
+    #if DRIVER_INVERTED_SLEEP == 0
+    shadeStepper2.sleepON();
+    #endif
+    String temp_str = String(currentPosition);
+    temp_str.toCharArray(positionPublish, temp_str.length() + 1);
+    client.publish(USER_MQTT_CLIENT_NAME"MasterBedroom/Left/positionState", positionPublish); 
+    moving2 = false;
   }
   Serial.println(currentPosition);
   Serial.println(newPosition);
+  Serial.println(currentPosition2);
+  Serial.println(newPosition2);
 }
 
 void checkIn()
 {
-  client.publish(USER_MQTT_CLIENT_NAME"/checkIn","OK"); 
+  client.publish(USER_MQTT_CLIENT_NAME"MasterBedroom/checkIn","OK"); 
 }
 
 
